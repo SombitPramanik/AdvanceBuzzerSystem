@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic System Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #212529; /* Bootstrap dark background color */
+            color: #dee2e6; /* Bootstrap dark text color */
+            min-height: 100vh; /* Ensure body takes at least full viewport height */
+            display: flex;
+            flex-direction: column; /* Arrange content vertically */
+        }
+        .navbar {
+            background-color: #343a40 !important; /* Darker navbar background */
+        }
+        .navbar-text {
+            color: #dee2e6 !important; /* Ensure text is visible in dark mode */
+            margin: 0 15px; /* Add some spacing between items */
+            padding: 8px 15px; /* Add padding to make them look like buttons */
+            border-radius: 5px; /* Rounded corners */
+            cursor: default; /* Indicate they are not clickable buttons */
+            font-weight: bold;
+        }
+        .status-ok {
+            background-color: #198754; /* Bootstrap success green */
+            color: white;
+        }
+        .status-error {
+            background-color: #dc3545; /* Bootstrap danger red */
+            color: white;
+        }
+        .target-display {
+             background-color: #0d6efd; /* Bootstrap primary blue */
+             color: white;
+        }
+        .container-main {
+            flex-grow: 1; /* Allow main content to take up available space */
+            display: flex;
+            flex-direction: column; /* Stack controls and table vertically */
+            align-items: center; /* Center content horizontally */
+            padding-top: 30px; /* Add space below the navbar */
+            padding-bottom: 30px;
+        }
+        .controls-container {
+            margin-bottom: 20px; /* Space below controls */
+            display: flex;
+            gap: 15px; /* Space between buttons/inputs */
+            align-items: center; /* Vertically align items */
+            flex-wrap: wrap; /* Allow items to wrap on smaller screens */
+            justify-content: center; /* Center controls horizontally */
+        }
+         .controls-container label {
+             margin-bottom: 0; /* Remove bottom margin for labels */
+         }
+        .table-container {
+            background-color: #343a40; /* Match navbar/card background */
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            width: 100%; /* Take full width of its container */
+            max-width: 900px; /* Max width for the table */
+        }
+        .table {
+            margin-bottom: 0; /* Remove default table margin */
+        }
+        /* Custom styles for dark mode table */
+        .table-dark {
+            --bs-table-bg: #343a40;
+            --bs-table-striped-bg: #3e444a;
+            --bs-table-active-bg: #4f555a;
+            --bs-table-hover-bg: #495056;
+            --bs-table-border-color: #454d55;
+            color: #dee2e6;
+        }
+        .table-dark th {
+            color: #dee2e6; /* Ensure header text is light */
+        }
+    </style>
+</head>
+<body class="bg-dark">
+
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Dashboard</a>
+            <div class="d-flex justify-content-evenly w-100" id="navbarContent">
+                <span class="navbar-text" id="system-status">
+                    System Status: Loading...
+                </span>
+                <span class="navbar-text" id="current-target">
+                    Current Target: Loading...
+                </span>
+                 <span class="navbar-text" id="timer-duration">
+                    Reset Timer: Loading...s
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-main">
+        <div class="controls-container">
+             <button id="reset-target-btn" class="btn btn-danger">Manual Target Reset</button>
+             <label for="timer-input" class="form-label text-light">Reset Timer (seconds):</label>
+             <input type="number" id="timer-input" class="form-control" style="width: 100px;" value="60" min="1">
+             <button id="update-timer-btn" class="btn btn-primary">Update Timer</button>
+        </div>
+        <div class="table-container">
+            <h2 class="text-center mb-4 text-light">Client Status</h2>
+            <div class="table-responsive">
+                <table class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <th scope="col">ID</th>
+                            <th scope="col">Name</th>
+                            <th scope="col">IP</th>
+                            <th scope="col">Client Status</th>
+                            <th scope="col">PIN34 Status</th>
+                            <th scope="col">Currently Engaged</th>
+                        </tr>
+                    </thead>
+                    <tbody id="client-table-body">
+                        <tr>
+                            <td colspan="6" class="text-center">Loading client data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">
+        import { io } from "https://cdn.socket.io/4.8.1/socket.io.esm.min.js";
+
+        // Connect to the Socket.IO server
+        const socket = io('http://192.168.203.244:5000/');
+
+        // Get references to the elements we will update
+        const systemStatusSpan = document.getElementById('system-status');
+        const currentTargetSpan = document.getElementById('current-target');
+        const timerDurationSpan = document.getElementById('timer-duration'); // New element for timer duration
+        const clientTableBody = document.getElementById('client-table-body');
+        const resetTargetBtn = document.getElementById('reset-target-btn'); // Manual reset button
+        const timerInput = document.getElementById('timer-input'); // Timer input field
+        const updateTimerBtn = document.getElementById('update-timer-btn'); // Update timer button
+
+
+        // --- Socket.IO Event Handlers ---
+
+        // Event handler for the 'connect' event
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            // Enable buttons on connect (they are initially disabled)
+            resetTargetBtn.disabled = false;
+            updateTimerBtn.disabled = false;
+            timerInput.disabled = false;
+        });
+
+        // Event handler for the 'disconnect' event
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            // Update UI to show disconnected state
+            systemStatusSpan.innerText = 'System Status: Disconnected';
+            systemStatusSpan.className = 'navbar-text status-error'; // Use error styling
+            currentTargetSpan.innerText = 'Current Target: N/A';
+            currentTargetSpan.className = 'navbar-text'; // Reset styling
+            timerDurationSpan.innerText = 'Reset Timer: N/A';
+            timerDurationSpan.className = 'navbar-text'; // Reset styling
+            clientTableBody.innerHTML = '<tr><td colspan="6" class="text-center">Disconnected from server.</td></tr>';
+            // Disable buttons when disconnected
+            resetTargetBtn.disabled = true;
+            updateTimerBtn.disabled = true;
+            timerInput.disabled = true;
+        });
+
+        // Event handler for the 'UI_UPDATE' event from the server
+        socket.on('UI_UPDATE', function(data) {
+            console.log('Received UI data:', data);
+
+            // --- Update Navbar ---
+            // Update System Status
+            systemStatusSpan.innerText = `System Status: ${data.SystemStatus}`;
+            // Apply status-specific styling
+            systemStatusSpan.classList.remove('status-ok', 'status-error'); // Remove previous status classes
+            if (data.SystemStatus === 'OK') {
+                systemStatusSpan.classList.add('status-ok');
+            } else if (data.SystemStatus === 'ERROR') {
+                systemStatusSpan.classList.add('status-error');
+                // Add error code if available
+                if (data.Error) {
+                    systemStatusSpan.innerText += ` [${data.Error}]`;
+                }
+            } else {
+                 // Default styling if status is neither OK nor ERROR (e.g., Loading)
+                 systemStatusSpan.className = 'navbar-text';
+            }
+
+            // Update Current Target
+            currentTargetSpan.innerText = `Current Target: ${data.CurrentTarget}`;
+            currentTargetSpan.classList.add('target-display'); // Apply target styling
+
+            // Update Reset Timer Duration Display
+            timerDurationSpan.innerText = `Reset Timer: ${data.ResetTimerDuration}s`;
+            // Update the input field value as well
+            timerInput.value = data.ResetTimerDuration;
+
+
+            // --- Update Table ---
+            // Clear the current table body content
+            clientTableBody.innerHTML = '';
+
+            // Check if there is client data and populate the table
+            if (data.Clients && data.Clients.length > 0) {
+                data.Clients.forEach(client => {
+                    const row = document.createElement('tr');
+
+                    // Using innerHTML for simplicity here, but createElement is also fine
+                    row.innerHTML = `
+                        <td>${client.id}</td>
+                        <td>${client.name}</td>
+                        <td>${client.ip}</td>
+                        <td>${client.status}</td>
+                        <td>${client.pin34_status}</td>
+                        <td>${client.engaged}</td>
+                    `;
+
+                    // Append the new row to the table body
+                    clientTableBody.appendChild(row);
+                });
+            } else {
+                // Display a message if no client data is available
+                const noDataRow = document.createElement('tr');
+                const noDataCell = document.createElement('td');
+                noDataCell.setAttribute('colspan', '6'); // Span across all columns
+                noDataCell.classList.add('text-center');
+                noDataCell.innerText = 'No client data available.';
+                noDataRow.appendChild(noDataCell);
+                clientTableBody.appendChild(noDataRow);
+            }
+        });
+
+        // --- UI Control Event Listeners ---
+
+        // Event listener for the Manual Target Reset button
+        resetTargetBtn.addEventListener('click', function() {
+            console.log("Manual Target Reset button clicked.");
+            // Send a POST request to the /reset_target route
+            fetch('/reset_target', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                // No body needed for a simple reset
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Reset response:', data);
+                // The UI will be updated by the subsequent Socket.IO 'UI_UPDATE' event
+            })
+            .catch(error => {
+                console.error('Error resetting target:', error);
+                alert('Failed to reset target. Check console for details.');
+            });
+        });
+
+        // Event listener for the Update Timer button
+        updateTimerBtn.addEventListener('click', function() {
+            console.log("Update Timer button clicked.");
+            const newDuration = parseFloat(timerInput.value); // Get value and convert to number
+
+            if (isNaN(newDuration) || newDuration <= 0) {
+                alert("Please enter a valid positive number for the timer duration.");
+                return;
+            }
+
+            // Send a POST request to the /update_reset_timer route with the new duration
+            fetch('/update_reset_timer', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ duration: newDuration }) // Send duration in JSON body
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Update timer response:', data);
+                 if (data.status === 'success') {
+                     // The UI will be updated by the subsequent Socket.IO 'UI_UPDATE' event
+                     console.log("Timer duration updated successfully.");
+                 } else {
+                     alert(`Failed to update timer: ${data.message}`);
+                 }
+            })
+            .catch(error => {
+                console.error('Error updating timer:', error);
+                alert('Failed to update timer. Check console for details.');
+            });
+        });
+
+        // Initial state for buttons (disabled until data is received)
+        resetTargetBtn.disabled = true;
+        updateTimerBtn.disabled = true;
+        timerInput.disabled = true;
+
+    </script>
+
+</body>
+</html>
